@@ -1,0 +1,11 @@
+[package]
+name = "obscurant"
+version = "0.1.0"
+edition = "2021"
+
+[build-dependencies]
+lalrpop = "0.20.0"
+
+[dependencies]
+lalrpop-util = { version = "0.20.0", features = ["lexer", "unicode"] }
+logos = "0.12.0"

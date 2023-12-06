@@ -1,0 +1,433 @@
+use std::rc::Rc;
+
+use obscurant::{
+  tokens::Token,
+  lexer::LexicalError,
+  ast,
+};
+
+grammar;
+
+Comma<T>: Vec<T> = { 
+    <mut v:(<T> ",")*> <e:T> => {
+      v.push(e);
+      v
+    }
+};
+
+Atom: Rc<ast::Expression> = {
+  <id:"ident"> => Rc::new(ast::Expression::Identifier(ast::Ident(id))),
+  <lit:"literal"> => Rc::new(ast::Expression::Literal(lit)),
+  <n:"num"> => Rc::new(ast::Expression::Constant(ast::Constant::Integer(n))),
+  "(" <v:Expr> ")" => v,
+}
+
+Postfix: Rc<ast::Expression> = {
+  <atom:Atom> => atom,
+  <expr:Postfix> "(" <args:Comma<Assigment>> ")" => Rc::new(ast::Expression::Call(expr, args)),
+  <expr:Postfix> "[" <idx:Expr> "]" => {
+    Rc::new(ast::Expression::Postfix(expr, ast::PostOp::Index(idx)))
+  },
+  <expr:Postfix> "." <id:"ident"> => {
+    Rc::new(ast::Expression::Postfix(expr, ast::PostOp::Dot(ast::Ident(id))))
+  },
+  <expr:Postfix> "->" <id:"ident"> => {
+    Rc::new(ast::Expression::Postfix(expr, ast::PostOp::Arrow(ast::Ident(id))))
+  },
+  <expr:Postfix> "++" => {
+    Rc::new(ast::Expression::Postfix(expr, ast::PostOp::Inc))
+  },
+  <expr:Postfix> "--" => {
+    Rc::new(ast::Expression::Postfix(expr, ast::PostOp::Dec))
+  }
+}
+
+UnaryOp: ast::UnOp = {
+  "&" => ast::UnOp::Ref,
+  "*" => ast::UnOp::Deref,
+  "+" => ast::UnOp::Plus,
+  "-" => ast::UnOp::Minus,
+  "~" => ast::UnOp::Inversion,
+  "!" => ast::UnOp::Negation,
+}
+
+Unary: Rc<ast::Expression> = {
+  <expr:Postfix> => {
+    expr
+  },
+  "++" <expr:Unary> => {
+    Rc::new(ast::Expression::Unary(ast::UnOp::Inc, expr))
+  },
+  "--" <expr:Unary> => {
+    Rc::new(ast::Expression::Unary(ast::UnOp::Dec, expr))
+  },
+  <unop:UnaryOp> <expr:Cast> => {
+    Rc::new(ast::Expression::Unary(unop, expr))
+  },
+}
+
+Cast: Rc<ast::Expression> = {
+  <expr:Unary> => {
+    expr
+  },
+  "(" <ty:TypeName> ")" <expr:Cast> => {
+    Rc::new(ast::Expression::Cast(ty, expr))
+  },
+}
+
+Mult: Rc<ast::Expression> = {
+  <expr:Cast> => {
+    expr
+  },
+  <rest:Mult> "*" <expr:Cast> => {
+    Rc::new(ast::Expression::Binary(rest, ast::BinOp::Mul, expr))
+  },
+  <rest:Mult> "/" <expr:Cast> => {
+    Rc::new(ast::Expression::Binary(rest, ast::BinOp::Div, expr))
+  },
+  <rest:Mult> "%" <expr:Cast> => {
+    Rc::new(ast::Expression::Binary(rest, ast::BinOp::Mod, expr))
+  },
+}
+
+Add: Rc<ast::Expression> = {
+  Mult,
+  
+  <rest:Add> "+" <expr:Mult> => {
+    Rc::new(ast::Expression::Binary(rest, ast::BinOp::Add, expr))
+  },
+  
+  <rest:Add> "-" <expr:Mult> => {
+    Rc::new(ast::Expression::Binary(rest, ast::BinOp::Sub, expr))
+  },
+}
+
+Relation: Rc<ast::Expression> = {
+  Add,
+  
+  <lhs:Relation> "<" <rhs:Add> => {
+    Rc::new(ast::Expression::Binary(lhs, ast::BinOp::LT, rhs))
+  },
+
+  <lhs:Relation> ">" <rhs:Add> => {
+    Rc::new(ast::Expression::Binary(lhs, ast::BinOp::GT, rhs))
+  },
+
+  <lhs:Relation> "<=" <rhs:Add> => {
+    Rc::new(ast::Expression::Binary(lhs, ast::BinOp::LE, rhs))
+  },
+
+  <lhs:Relation> ">=" <rhs:Add> => {
+    Rc::new(ast::Expression::Binary(lhs, ast::BinOp::GE, rhs))
+  },
+}
+
+Equality: Rc<ast::Expression> = {
+  Relation,
+
+  <lhs:Equality> "==" <rhs:Relation> => {
+    Rc::new(ast::Expression::Binary(lhs, ast::BinOp::EQ, rhs))
+  },
+
+  <lhs:Equality> "!=" <rhs:Relation> => {
+    Rc::new(ast::Expression::Binary(lhs, ast::BinOp::NE, rhs))
+  },
+}
+
+LogicalAnd: Rc<ast::Expression> = {
+  Equality,
+
+  <lhs:LogicalAnd> "&&" <rhs:Equality> => {
+    Rc::new(ast::Expression::Binary(lhs, ast::BinOp::LAND, rhs))
+  }
+}
+
+LogicalOr: Rc<ast::Expression> = {
+  LogicalAnd,
+
+  <lhs:LogicalOr> "||" <rhs:LogicalAnd> => {
+    Rc::new(ast::Expression::Binary(lhs, ast::BinOp::LOR, rhs))
+  }
+}
+
+Cond: Rc<ast::Expression> = {
+  LogicalOr,
+
+  <cond:LogicalOr> "?" <expr:Expr> ":" <other:Cond> => {
+    Rc::new(ast::Expression::Conditional(cond, expr, other))
+  }
+}
+
+AssignOp: ast::AssignOp = {
+  "=" => ast::AssignOp::Mov,
+  "*=" => ast::AssignOp::Mul,
+  "/=" => ast::AssignOp::Div,
+  "%=" => ast::AssignOp::Mod,
+  "+=" => ast::AssignOp::Add,
+  "-=" => ast::AssignOp::Sub,
+}
+
+Assigment: Rc<ast::Expression> = {
+  Cond,
+  <lhs:Unary> <op:AssignOp> <rhs:Assigment> => Rc::new(ast::Expression::Assignment(lhs, op, rhs)),
+}
+
+pub Expr: Rc<ast::Expression> = {
+  Assigment,
+}
+
+TypeName: ast::Ty = {
+  "void" => ast::Ty::Void,
+  "char" => ast::Ty::Char,
+  "short" => ast::Ty::Short,
+  "int" => ast::Ty::Int,
+  "long" => ast::Ty::Long,
+  "float" => ast::Ty::Float,
+  "double" => ast::Ty::Double,
+}
+
+TypeSpecifiers: ast::Ty = {
+  TypeName,
+}
+
+DeclarationSpecifiers: ast::Ty = {
+  TypeSpecifiers,
+}
+
+Pointer: Box<dyn FnOnce(ast::Ty) -> ast::Ty> = {
+  "*" => Box::new(|ty| ast::Ty::Pointer(Rc::new(ty))),
+  "*" <p:Pointer> => Box::new(|ty| ast::Ty::Pointer(Rc::new(p(ty)))),
+}
+
+DirectDeclarator: Box<dyn FnOnce(ast::Ty) -> ast::Variable> = {
+  <id:"ident"> => { 
+    Box::new(|ty| ast::Variable {
+      id: ast::Ident(id),
+      ty,
+    }) 
+  },
+  <decl:DirectDeclarator> "[" <sz:Expr?> "]" => {
+    Box::new(|ty| {
+      let var = decl(ty);
+      ast::Variable {
+        id: var.id,
+        ty: ast::Ty::Array(Rc::new(var.ty), sz),
+      }
+    })
+  },
+}
+
+Declarator: Box<dyn FnOnce(ast::Ty) -> ast::Variable> = {
+  DirectDeclarator,
+  <p:Pointer> <decl:DirectDeclarator> => {
+    Box::new(|ty| decl(p(ty)))
+  },
+}
+
+InitDeclarator: Box<dyn FnOnce(ast::Ty) -> ast::Declaration> = {
+  <decl:Declarator> => { 
+    Box::new(|ty| 
+      ast::Declaration {
+        var: decl(ty),
+        init: None,
+      })
+    },
+  <decl:Declarator> "=" <init:Expr> => {
+    Box::new(|ty|
+      ast::Declaration {
+        var: decl(ty),
+        init: Some(init),
+      }
+    )
+  },
+}
+
+Variable: ast::Variable = {
+  <ty:DeclarationSpecifiers> <decl:Declarator> => {
+    decl(ty)
+  },
+}
+
+Declaration: ast::Declaration = {
+  <ty:DeclarationSpecifiers> <decl:InitDeclarator> ";" => {
+    decl(ty)
+  },
+}
+
+CompoundStatement: Rc<ast::Statement> = {
+  "{" <stats:Statement*> "}" => Rc::new(ast::Statement::Compound(stats)),
+}
+
+ExprStat: Rc<ast::Statement> = {
+  ";" => {
+    Rc::new(ast::Statement::Expr(None))
+  },
+  <expr:Expr> ";" => {
+    Rc::new(ast::Statement::Expr(Some(expr)))
+  },
+}
+
+OpenIf: ast::Selection = {
+  "if" "(" <expr:Expr> ")" <stat:Statement> => {
+    ast::Selection::If(expr, stat)
+  },
+
+  "if" "(" <expr:Expr> ")" <stat1:ClosedStatement> "else" <stat2:OpenStatement> => {
+    ast::Selection::IfElse(expr, stat1, stat2)
+  },
+}
+
+ClosedSelection: ast::Selection = {
+  "if" "(" <expr:Expr> ")" <stat1:ClosedStatement> "else" <stat2:ClosedStatement> => {
+    ast::Selection::IfElse(expr, stat1, stat2)
+  },
+
+  // NOTE: it's not clear what type of stat should have
+  "switch" "(" <expr:Expr> ")" <stat:ClosedStatement> => {
+    ast::Selection::Switch(expr, stat)
+  },
+}
+
+OpenIteration: ast::Iteration = {
+  "while" "(" <expr:Expr> ")" <stat:OpenStatement> => {
+    ast::Iteration::While(expr, stat)
+  },
+
+  "for" "(" <init:ExprStat> <cond:ExprStat> <step:Expr> ")" <stat:OpenStatement> => {
+    ast::Iteration::For(init, cond, step, stat)
+  },
+}
+
+ClosedIteration: ast::Iteration = {
+  "while" "(" <expr:Expr> ")" <stat:ClosedStatement> => {
+    ast::Iteration::While(expr, stat)
+  },
+
+  "for" "(" <init:ExprStat> <cond:ExprStat> <step:Expr> ")" <stat:ClosedStatement> => {
+    ast::Iteration::For(init, cond, step, stat)
+  },
+}
+
+JumpStatement: ast::Jump = {
+  "continue" ";" => ast::Jump::Continue,
+  "break" ";" => ast::Jump::Break,
+  "return" <expr:Expr?> ";" => ast::Jump::Return(expr),
+}
+
+OpenStatement: Rc<ast::Statement> = {
+  <stat:OpenIf> => Rc::new(ast::Statement::Selection(stat)),
+  <stat:OpenIteration> => Rc::new(ast::Statement::Iteration(stat)),
+}
+
+ClosedStatement: Rc<ast::Statement> = {
+  ExprStat,
+  <stat:JumpStatement> => Rc::new(ast::Statement::Jump(stat)),
+  <decl:Declaration> => Rc::new(ast::Statement::Declaration(decl)),
+  CompoundStatement,
+  <stat:ClosedSelection> => Rc::new(ast::Statement::Selection(stat)),
+  <stat:ClosedIteration> => Rc::new(ast::Statement::Iteration(stat)),
+}
+
+pub Statement: Rc<ast::Statement> = {
+  OpenStatement,
+  ClosedStatement,
+}
+
+Function: ast::Function = {
+  <var:Variable> "(" <args:Comma<Variable>> ")" <body:CompoundStatement> => {
+    ast::Function {
+      id: var.id,
+      args,
+      ret_ty: var.ty,
+      body,
+    }
+  },
+}
+
+Item: ast::Item = {
+  <item:Function> => ast::Item::Function(item),
+}
+
+pub Unit: ast::Unit = {
+  <items:Item*> => {
+    ast::Unit {
+      items,
+    }
+  }
+}
+
+extern {
+  type Location = usize;
+  type Error = LexicalError;
+
+  enum Token {
+    "ident" => Token::Identifier(<String>),
+    "literal" => Token::Literal(<String>),
+    "num" => Token::Integer(<i128>),
+    "." => Token::Dot,
+    "," => Token::Comma,
+    "++" => Token::Inc,
+    "--" => Token::Dec,
+    "->" => Token::Arrow,
+    
+    "[" => Token::LBracket,
+    "]" => Token::RBracket,
+    "(" => Token::LParen,
+    ")" => Token::RParen,
+    "{" => Token::LBrace,
+    "}" => Token::RBrace,
+
+    "=" => Token::Assign,
+    ";" => Token::Semicolon,
+ 
+    "&" => Token::Ref,
+    "~" => Token::Inversion,
+    "!" => Token::Negation,
+ 
+    "*" => Token::OperatorMul,
+    "/" => Token::OperatorDiv,
+    "%" => Token::OperatorMod,
+ 
+    "+" => Token::OperatorAdd,
+    "-" => Token::OperatorSub,
+ 
+    "<" => Token::LT,
+    ">" => Token::GT,
+    "<=" => Token::LE,
+    ">=" => Token::GE,
+    
+    "==" => Token::EQ,
+    "!=" => Token::NE,
+
+    "&&" => Token::LAND,
+    "||" => Token::LOR,
+
+    "?" => Token::Question,
+    ":" => Token::Colon,
+
+    "*=" => Token::MulAssign,
+    "/=" => Token::DivAssign,
+    "%=" => Token::ModAssign,
+    "+=" => Token::AddAssign,
+    "-=" => Token::SubAssign,
+
+    "void" => Token::Void,
+    "char" => Token::Char,
+    "short" => Token::Short,
+    "int" => Token::Int,
+    "long" => Token::Long,
+    "float" => Token::Float,
+    "double" => Token::Double,
+ 
+    "if" => Token::If,
+    "else" => Token::Else,
+    "switch" => Token::Switch,
+    "for" => Token::For,
+    "while" => Token::While,
+    "do" => Token::Do,
+  
+    "continue" => Token::Continue,
+    "break" => Token::Break,
+    "return" => Token::Return,
+  }
+}
