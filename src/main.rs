@@ -11,7 +11,7 @@ fn main() -> io::Result<()> {
         let lexer = Lexer::new(&source_code[..]);
         let parser = grammar::UnitParser::new();
         let ast = parser.parse(lexer).unwrap();
-        println!("{:#?}", ast);
+        println!("{}", ast);
     }
 
     Ok(())
