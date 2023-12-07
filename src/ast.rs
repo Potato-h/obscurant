@@ -36,7 +36,7 @@ pub enum UnOp {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum PostOp {
     Index(Rc<Expression>),
-    Call(Vec<Rc<Expression>>),
+    Call(Vec<Expression>),
     Dot(Ident),
     Arrow(Ident),
     Inc,
@@ -81,38 +81,37 @@ pub enum Expression {
     Unary(UnOp, Rc<Expression>),
     Postfix(Rc<Expression>, PostOp),
     Assignment(Rc<Expression>, AssignOp, Rc<Expression>),
-    Call(Rc<Expression>, Vec<Rc<Expression>>),
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Selection {
-    If(Rc<Expression>, Rc<Statement>),
-    IfElse(Rc<Expression>, Rc<Statement>, Rc<Statement>),
-    Switch(Rc<Expression>, Rc<Statement>),
+    If(Expression, Statement),
+    IfElse(Expression, Statement, Statement),
+    Switch(Expression, Statement),
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Iteration {
-    While(Rc<Expression>, Rc<Statement>),
-    Do(Rc<Statement>, Rc<Expression>),
-    For(Rc<Statement>, Rc<Statement>, Rc<Expression>, Rc<Statement>),
+    While(Expression, Statement),
+    Do(Statement, Expression),
+    For(Statement, Statement, Expression, Statement),
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Jump {
     Continue,
     Break,
-    Return(Option<Rc<Expression>>),
+    Return(Option<Expression>),
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Statement {
-    Expr(Option<Rc<Expression>>),
-    Jump(Jump),
-    Selection(Selection),
-    Iteration(Iteration),
-    Declaration(Declaration),
-    Compound(Vec<Rc<Statement>>),
+    Expr(Option<Expression>),
+    Jump(Rc<Jump>),
+    Selection(Rc<Selection>),
+    Iteration(Rc<Iteration>),
+    Declaration(Rc<Declaration>),
+    Compound(Vec<Statement>),
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -124,7 +123,7 @@ pub struct Variable {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Declaration {
     pub var: Variable,
-    pub init: Option<Rc<Expression>>,
+    pub init: Option<Expression>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -132,7 +131,7 @@ pub struct Function {
     pub id: Ident,
     pub args: Vec<Variable>,
     pub ret_ty: Ty,
-    pub body: Rc<Statement>,
+    pub body: Statement,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]

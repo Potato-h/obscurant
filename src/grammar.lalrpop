@@ -15,31 +15,25 @@ Comma<T>: Vec<T> = {
     }
 };
 
-Atom: Rc<ast::Expression> = {
-  <id:"ident"> => Rc::new(ast::Expression::Identifier(ast::Ident(id))),
-  <lit:"literal"> => Rc::new(ast::Expression::Literal(lit)),
-  <n:"num"> => Rc::new(ast::Expression::Constant(ast::Constant::Integer(n))),
+Rc<T>: Rc<T> = {
+  <v:T> => Rc::new(v),
+};
+
+Atom: ast::Expression = {
+  <id:"ident"> => ast::Expression::Identifier(ast::Ident(id)),
+  <lit:"literal"> => ast::Expression::Literal(lit),
+  <n:"num"> => ast::Expression::Constant(ast::Constant::Integer(n)),
   "(" <v:Expr> ")" => v,
 }
 
-Postfix: Rc<ast::Expression> = {
+Postfix: ast::Expression = {
   <atom:Atom> => atom,
-  <expr:Postfix> "(" <args:Comma<Assigment>> ")" => Rc::new(ast::Expression::Call(expr, args)),
-  <expr:Postfix> "[" <idx:Expr> "]" => {
-    Rc::new(ast::Expression::Postfix(expr, ast::PostOp::Index(idx)))
-  },
-  <expr:Postfix> "." <id:"ident"> => {
-    Rc::new(ast::Expression::Postfix(expr, ast::PostOp::Dot(ast::Ident(id))))
-  },
-  <expr:Postfix> "->" <id:"ident"> => {
-    Rc::new(ast::Expression::Postfix(expr, ast::PostOp::Arrow(ast::Ident(id))))
-  },
-  <expr:Postfix> "++" => {
-    Rc::new(ast::Expression::Postfix(expr, ast::PostOp::Inc))
-  },
-  <expr:Postfix> "--" => {
-    Rc::new(ast::Expression::Postfix(expr, ast::PostOp::Dec))
-  }
+  <expr:Rc<Postfix>> "(" <args:Comma<Assigment>> ")" => ast::Expression::Postfix(expr, ast::PostOp::Call(args)),
+  <expr:Rc<Postfix>> "[" <idx:Rc<Expr>> "]" => ast::Expression::Postfix(expr, ast::PostOp::Index(idx)),
+  <expr:Rc<Postfix>> "." <id:"ident"> => ast::Expression::Postfix(expr, ast::PostOp::Dot(ast::Ident(id))),
+  <expr:Rc<Postfix>> "->" <id:"ident"> => ast::Expression::Postfix(expr, ast::PostOp::Arrow(ast::Ident(id))),
+  <expr:Rc<Postfix>> "++" => ast::Expression::Postfix(expr, ast::PostOp::Inc),
+  <expr:Rc<Postfix>> "--" => ast::Expression::Postfix(expr, ast::PostOp::Dec),
 }
 
 UnaryOp: ast::UnOp = {
@@ -51,111 +45,58 @@ UnaryOp: ast::UnOp = {
   "!" => ast::UnOp::Negation,
 }
 
-Unary: Rc<ast::Expression> = {
-  <expr:Postfix> => {
-    expr
-  },
-  "++" <expr:Unary> => {
-    Rc::new(ast::Expression::Unary(ast::UnOp::Inc, expr))
-  },
-  "--" <expr:Unary> => {
-    Rc::new(ast::Expression::Unary(ast::UnOp::Dec, expr))
-  },
-  <unop:UnaryOp> <expr:Cast> => {
-    Rc::new(ast::Expression::Unary(unop, expr))
-  },
+Unary: ast::Expression = {
+  Postfix,
+  "++" <expr:Rc<Unary>> => ast::Expression::Unary(ast::UnOp::Inc, expr),
+  "--" <expr:Rc<Unary>> => ast::Expression::Unary(ast::UnOp::Dec, expr),
+  <unop:UnaryOp> <expr:Rc<Cast>> => ast::Expression::Unary(unop, expr),
 }
 
-Cast: Rc<ast::Expression> = {
-  <expr:Unary> => {
-    expr
-  },
-  "(" <ty:TypeName> ")" <expr:Cast> => {
-    Rc::new(ast::Expression::Cast(ty, expr))
-  },
+Cast: ast::Expression = {
+  Unary,
+  "(" <ty:TypeName> ")" <expr:Rc<Cast>> => ast::Expression::Cast(ty, expr),
 }
 
-Mult: Rc<ast::Expression> = {
-  <expr:Cast> => {
-    expr
-  },
-  <rest:Mult> "*" <expr:Cast> => {
-    Rc::new(ast::Expression::Binary(rest, ast::BinOp::Mul, expr))
-  },
-  <rest:Mult> "/" <expr:Cast> => {
-    Rc::new(ast::Expression::Binary(rest, ast::BinOp::Div, expr))
-  },
-  <rest:Mult> "%" <expr:Cast> => {
-    Rc::new(ast::Expression::Binary(rest, ast::BinOp::Mod, expr))
-  },
+Mult: ast::Expression = {
+  Cast,
+  <rest:Rc<Mult>> "*" <expr:Rc<Cast>> => ast::Expression::Binary(rest, ast::BinOp::Mul, expr),
+  <rest:Rc<Mult>> "/" <expr:Rc<Cast>> => ast::Expression::Binary(rest, ast::BinOp::Div, expr),
+  <rest:Rc<Mult>> "%" <expr:Rc<Cast>> => ast::Expression::Binary(rest, ast::BinOp::Mod, expr),
 }
 
-Add: Rc<ast::Expression> = {
+Add: ast::Expression = {
   Mult,
-  
-  <rest:Add> "+" <expr:Mult> => {
-    Rc::new(ast::Expression::Binary(rest, ast::BinOp::Add, expr))
-  },
-  
-  <rest:Add> "-" <expr:Mult> => {
-    Rc::new(ast::Expression::Binary(rest, ast::BinOp::Sub, expr))
-  },
+  <rest:Rc<Add>> "+" <expr:Rc<Mult>> => ast::Expression::Binary(rest, ast::BinOp::Add, expr),
+  <rest:Rc<Add>> "-" <expr:Rc<Mult>> => ast::Expression::Binary(rest, ast::BinOp::Sub, expr),
 }
 
-Relation: Rc<ast::Expression> = {
+Relation: ast::Expression = {
   Add,
-  
-  <lhs:Relation> "<" <rhs:Add> => {
-    Rc::new(ast::Expression::Binary(lhs, ast::BinOp::LT, rhs))
-  },
-
-  <lhs:Relation> ">" <rhs:Add> => {
-    Rc::new(ast::Expression::Binary(lhs, ast::BinOp::GT, rhs))
-  },
-
-  <lhs:Relation> "<=" <rhs:Add> => {
-    Rc::new(ast::Expression::Binary(lhs, ast::BinOp::LE, rhs))
-  },
-
-  <lhs:Relation> ">=" <rhs:Add> => {
-    Rc::new(ast::Expression::Binary(lhs, ast::BinOp::GE, rhs))
-  },
+  <lhs:Rc<Relation>> "<" <rhs:Rc<Add>> => ast::Expression::Binary(lhs, ast::BinOp::LT, rhs),
+  <lhs:Rc<Relation>> ">" <rhs:Rc<Add>> => ast::Expression::Binary(lhs, ast::BinOp::GT, rhs),
+  <lhs:Rc<Relation>> "<=" <rhs:Rc<Add>> => ast::Expression::Binary(lhs, ast::BinOp::LE, rhs),
+  <lhs:Rc<Relation>> ">=" <rhs:Rc<Add>> => ast::Expression::Binary(lhs, ast::BinOp::GE, rhs),
 }
 
-Equality: Rc<ast::Expression> = {
+Equality: ast::Expression = {
   Relation,
-
-  <lhs:Equality> "==" <rhs:Relation> => {
-    Rc::new(ast::Expression::Binary(lhs, ast::BinOp::EQ, rhs))
-  },
-
-  <lhs:Equality> "!=" <rhs:Relation> => {
-    Rc::new(ast::Expression::Binary(lhs, ast::BinOp::NE, rhs))
-  },
+  <lhs:Rc<Equality>> "==" <rhs:Rc<Relation>> => ast::Expression::Binary(lhs, ast::BinOp::EQ, rhs),
+  <lhs:Rc<Equality>> "!=" <rhs:Rc<Relation>> => ast::Expression::Binary(lhs, ast::BinOp::NE, rhs),
 }
 
-LogicalAnd: Rc<ast::Expression> = {
+LogicalAnd: ast::Expression = {
   Equality,
-
-  <lhs:LogicalAnd> "&&" <rhs:Equality> => {
-    Rc::new(ast::Expression::Binary(lhs, ast::BinOp::LAND, rhs))
-  }
+  <lhs:Rc<LogicalAnd>> "&&" <rhs:Rc<Equality>> => ast::Expression::Binary(lhs, ast::BinOp::LAND, rhs),
 }
 
-LogicalOr: Rc<ast::Expression> = {
+LogicalOr: ast::Expression = {
   LogicalAnd,
-
-  <lhs:LogicalOr> "||" <rhs:LogicalAnd> => {
-    Rc::new(ast::Expression::Binary(lhs, ast::BinOp::LOR, rhs))
-  }
+  <lhs:Rc<LogicalOr>> "||" <rhs:Rc<LogicalAnd>> => ast::Expression::Binary(lhs, ast::BinOp::LOR, rhs),
 }
 
-Cond: Rc<ast::Expression> = {
+Cond: ast::Expression = {
   LogicalOr,
-
-  <cond:LogicalOr> "?" <expr:Expr> ":" <other:Cond> => {
-    Rc::new(ast::Expression::Conditional(cond, expr, other))
-  }
+  <cond:Rc<LogicalOr>> "?" <expr:Rc<Expr>> ":" <other:Rc<Cond>> => ast::Expression::Conditional(cond, expr, other),
 }
 
 AssignOp: ast::AssignOp = {
@@ -167,12 +108,12 @@ AssignOp: ast::AssignOp = {
   "-=" => ast::AssignOp::Sub,
 }
 
-Assigment: Rc<ast::Expression> = {
+Assigment: ast::Expression = {
   Cond,
-  <lhs:Unary> <op:AssignOp> <rhs:Assigment> => Rc::new(ast::Expression::Assignment(lhs, op, rhs)),
+  <lhs:Rc<Unary>> <op:AssignOp> <rhs:Rc<Assigment>> => ast::Expression::Assignment(lhs, op, rhs),
 }
 
-pub Expr: Rc<ast::Expression> = {
+pub Expr: ast::Expression = {
   Assigment,
 }
 
@@ -206,7 +147,7 @@ DirectDeclarator: Box<dyn FnOnce(ast::Ty) -> ast::Variable> = {
       ty,
     }) 
   },
-  <decl:DirectDeclarator> "[" <sz:Expr?> "]" => {
+  <decl:DirectDeclarator> "[" <sz:Rc<Expr>?> "]" => {
     Box::new(|ty| {
       let var = decl(ty);
       ast::Variable {
@@ -254,24 +195,16 @@ Declaration: ast::Declaration = {
   },
 }
 
-CompoundStatement: Rc<ast::Statement> = {
-  "{" <stats:Statement*> "}" => Rc::new(ast::Statement::Compound(stats)),
+CompoundStatement: ast::Statement = {
+  "{" <stats:Statement*> "}" => ast::Statement::Compound(stats),
 }
 
-ExprStat: Rc<ast::Statement> = {
-  ";" => {
-    Rc::new(ast::Statement::Expr(None))
-  },
-  <expr:Expr> ";" => {
-    Rc::new(ast::Statement::Expr(Some(expr)))
-  },
+ExprStat: ast::Statement = {
+  <expr:Expr?> ";" => ast::Statement::Expr(expr),
 }
 
 OpenIf: ast::Selection = {
-  "if" "(" <expr:Expr> ")" <stat:Statement> => {
-    ast::Selection::If(expr, stat)
-  },
-
+  "if" "(" <expr:Expr> ")" <stat:Statement> => ast::Selection::If(expr, stat),
   "if" "(" <expr:Expr> ")" <stat1:ClosedStatement> "else" <stat2:OpenStatement> => {
     ast::Selection::IfElse(expr, stat1, stat2)
   },
@@ -314,21 +247,21 @@ JumpStatement: ast::Jump = {
   "return" <expr:Expr?> ";" => ast::Jump::Return(expr),
 }
 
-OpenStatement: Rc<ast::Statement> = {
-  <stat:OpenIf> => Rc::new(ast::Statement::Selection(stat)),
-  <stat:OpenIteration> => Rc::new(ast::Statement::Iteration(stat)),
+OpenStatement: ast::Statement = {
+  <stat:Rc<OpenIf>> => ast::Statement::Selection(stat),
+  <stat:Rc<OpenIteration>> => ast::Statement::Iteration(stat),
 }
 
-ClosedStatement: Rc<ast::Statement> = {
+ClosedStatement: ast::Statement = {
   ExprStat,
-  <stat:JumpStatement> => Rc::new(ast::Statement::Jump(stat)),
-  <decl:Declaration> => Rc::new(ast::Statement::Declaration(decl)),
   CompoundStatement,
-  <stat:ClosedSelection> => Rc::new(ast::Statement::Selection(stat)),
-  <stat:ClosedIteration> => Rc::new(ast::Statement::Iteration(stat)),
+  <stat:Rc<JumpStatement>> => ast::Statement::Jump(stat),
+  <decl:Rc<Declaration>> => ast::Statement::Declaration(decl),
+  <stat:Rc<ClosedSelection>> => ast::Statement::Selection(stat),
+  <stat:Rc<ClosedIteration>> => ast::Statement::Iteration(stat),
 }
 
-pub Statement: Rc<ast::Statement> = {
+pub Statement: ast::Statement = {
   OpenStatement,
   ClosedStatement,
 }
