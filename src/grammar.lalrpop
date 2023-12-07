@@ -19,6 +19,11 @@ Rc<T>: Rc<T> = {
   <v:T> => Rc::new(v),
 };
 
+Tier<Op,NextTier>: ast::Expression = {
+    NextTier,
+    <lhs:Rc<Tier<Op,NextTier>>> <op:Op> <rhs:Rc<NextTier>> => ast::Expression::Binary(lhs, op, rhs),
+};
+
 Atom: ast::Expression = {
   <id:"ident"> => ast::Expression::Identifier(ast::Ident(id)),
   <lit:"literal"> => ast::Expression::Literal(lit),
@@ -57,42 +62,43 @@ Cast: ast::Expression = {
   "(" <ty:TypeName> ")" <expr:Rc<Cast>> => ast::Expression::Cast(ty, expr),
 }
 
-Mult: ast::Expression = {
-  Cast,
-  <rest:Rc<Mult>> "*" <expr:Rc<Cast>> => ast::Expression::Binary(rest, ast::BinOp::Mul, expr),
-  <rest:Rc<Mult>> "/" <expr:Rc<Cast>> => ast::Expression::Binary(rest, ast::BinOp::Div, expr),
-  <rest:Rc<Mult>> "%" <expr:Rc<Cast>> => ast::Expression::Binary(rest, ast::BinOp::Mod, expr),
+MultOp: ast::BinOp = {
+  "*" => ast::BinOp::Mul,
+  "/" => ast::BinOp::Div,
+  "%" => ast::BinOp::Mod,
 }
 
-Add: ast::Expression = {
-  Mult,
-  <rest:Rc<Add>> "+" <expr:Rc<Mult>> => ast::Expression::Binary(rest, ast::BinOp::Add, expr),
-  <rest:Rc<Add>> "-" <expr:Rc<Mult>> => ast::Expression::Binary(rest, ast::BinOp::Sub, expr),
+AddOp: ast::BinOp = {
+  "+" => ast::BinOp::Add,
+  "-" => ast::BinOp::Sub,
 }
 
-Relation: ast::Expression = {
-  Add,
-  <lhs:Rc<Relation>> "<" <rhs:Rc<Add>> => ast::Expression::Binary(lhs, ast::BinOp::LT, rhs),
-  <lhs:Rc<Relation>> ">" <rhs:Rc<Add>> => ast::Expression::Binary(lhs, ast::BinOp::GT, rhs),
-  <lhs:Rc<Relation>> "<=" <rhs:Rc<Add>> => ast::Expression::Binary(lhs, ast::BinOp::LE, rhs),
-  <lhs:Rc<Relation>> ">=" <rhs:Rc<Add>> => ast::Expression::Binary(lhs, ast::BinOp::GE, rhs),
+RelationOp: ast::BinOp = {
+  "<" => ast::BinOp::LT,
+  ">" => ast::BinOp::GT,
+  "<=" => ast::BinOp::LE,
+  ">=" => ast::BinOp::GE,
 }
 
-Equality: ast::Expression = {
-  Relation,
-  <lhs:Rc<Equality>> "==" <rhs:Rc<Relation>> => ast::Expression::Binary(lhs, ast::BinOp::EQ, rhs),
-  <lhs:Rc<Equality>> "!=" <rhs:Rc<Relation>> => ast::Expression::Binary(lhs, ast::BinOp::NE, rhs),
+EqualityOp: ast::BinOp = {
+  "==" => ast::BinOp::EQ,
+  "!=" => ast::BinOp::NE,
 }
 
-LogicalAnd: ast::Expression = {
-  Equality,
-  <lhs:Rc<LogicalAnd>> "&&" <rhs:Rc<Equality>> => ast::Expression::Binary(lhs, ast::BinOp::LAND, rhs),
+LogicalAndOp: ast::BinOp = {
+  "&&" => ast::BinOp::LAND,
 }
 
-LogicalOr: ast::Expression = {
-  LogicalAnd,
-  <lhs:Rc<LogicalOr>> "||" <rhs:Rc<LogicalAnd>> => ast::Expression::Binary(lhs, ast::BinOp::LOR, rhs),
+LogicalOrOp: ast::BinOp = {
+  "||" => ast::BinOp::LOR,
 }
+
+Mult = Tier<MultOp, Cast>;
+Add = Tier<AddOp, Mult>;
+Relation = Tier<RelationOp, Add>;
+Equality = Tier<EqualityOp, Relation>;
+LogicalAnd = Tier<LogicalAndOp, Equality>;
+LogicalOr = Tier<LogicalOrOp, LogicalAnd>;
 
 Cond: ast::Expression = {
   LogicalOr,
