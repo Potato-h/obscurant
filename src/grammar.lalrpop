@@ -153,15 +153,8 @@ DirectDeclarator: Box<dyn FnOnce(ast::Ty) -> ast::Variable> = {
       ty,
     }) 
   },
-  <decl:DirectDeclarator> "[" <sz:Rc<Expr>?> "]" => {
-    Box::new(|ty| {
-      let var = decl(ty);
-      ast::Variable {
-        id: var.id,
-        ty: ast::Ty::Array(Rc::new(var.ty), sz),
-      }
-    })
-  },
+  "(" <decl:Declarator> ")" => decl,
+  <decl:DirectDeclarator> "[" <sz:Rc<Expr>?> "]" => Box::new(|ty| decl(ast::Ty::Array(Rc::new(ty), sz))),
 }
 
 Declarator: Box<dyn FnOnce(ast::Ty) -> ast::Variable> = {
@@ -195,14 +188,14 @@ Variable: ast::Variable = {
   },
 }
 
-Declaration: ast::Declaration = {
-  <ty:DeclarationSpecifiers> <decl:InitDeclarator> ";" => {
-    decl(ty)
+Declaration: Vec<ast::Declaration> = {
+  <ty:DeclarationSpecifiers> <decl:Comma<InitDeclarator>> ";" => {
+    decl.into_iter().map(|d| d(ty.clone())).collect()
   },
 }
 
 CompoundStatement: ast::Statement = {
-  "{" <stats:Statement*> "}" => ast::Statement::Compound(stats),
+  "{" <body:Statement*> "}" => ast::Statement::Compound(ast::Compound { body }),
 }
 
 ExprStat: ast::Statement = {
@@ -262,7 +255,7 @@ ClosedStatement: ast::Statement = {
   ExprStat,
   CompoundStatement,
   <stat:Rc<JumpStatement>> => ast::Statement::Jump(stat),
-  <decl:Rc<Declaration>> => ast::Statement::Declaration(decl),
+  <decl:Declaration> => ast::Statement::Declaration(decl),
   <stat:Rc<ClosedSelection>> => ast::Statement::Selection(stat),
   <stat:Rc<ClosedIteration>> => ast::Statement::Iteration(stat),
 }

@@ -1,5 +1,5 @@
 use lalrpop_util::lalrpop_mod;
-use obscurant::lexer::Lexer;
+use obscurant::{ast::Obfuscate, lexer::Lexer};
 use std::io;
 
 lalrpop_mod!(pub grammar);
@@ -11,7 +11,8 @@ fn main() -> io::Result<()> {
         let lexer = Lexer::new(&source_code[..]);
         let parser = grammar::UnitParser::new();
         let ast = parser.parse(lexer).unwrap();
-        println!("{}", ast);
+        let obf = ast.obfuscate();
+        println!("{}", obf);
     }
 
     Ok(())
