@@ -378,7 +378,7 @@ impl Display for Statement {
 
 impl Display for Function {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
+        writeln!(
             f,
             "{ty} {id}({args}) {body}",
             ty = self.ret_ty,
@@ -452,7 +452,21 @@ impl Obfuscate for Expression {
     fn obfuscate(&self) -> Expression {
         match self {
             Expression::Identifier(id) => Expression::Identifier(id.obfuscate()),
-            Expression::Constant(cons) => Expression::Constant(cons.clone()),
+            Expression::Constant(Constant::Integer(v)) => {
+                if v.abs() < i32::MAX as i128 / 2 {
+                    Expression::Binary(
+                        Rc::new(Expression::Constant(Constant::Integer(1))),
+                        BinOp::Add,
+                        Rc::new(Expression::Binary(
+                            Rc::new(Expression::Constant(Constant::Integer(*v))),
+                            BinOp::Add,
+                            Rc::new(Expression::Constant(Constant::Integer(-1))),
+                        )),
+                    )
+                } else {
+                    Expression::Constant(Constant::Integer(*v))
+                }
+            }
             Expression::Literal(lit) => Expression::Literal(lit.clone()),
             Expression::Cast(ty, expr) => Expression::Cast(ty.clone(), Rc::new(expr.obfuscate())),
             Expression::Binary(lhs, op, rhs) => Expression::Binary(
@@ -535,11 +549,20 @@ impl Obfuscate for Compound {
     }
 }
 
+impl Obfuscate for Jump {
+    fn obfuscate(&self) -> Self {
+        match self {
+            Jump::Return(Some(expr)) => Jump::Return(Some(expr.obfuscate())),
+            _ => self.clone(),
+        }
+    }
+}
+
 impl Obfuscate for Statement {
     fn obfuscate(&self) -> Self {
         match self {
             Statement::Expr(expr) => Statement::Expr(expr.as_ref().map(|expr| expr.obfuscate())),
-            Statement::Jump(_) => self.clone(),
+            Statement::Jump(jmp) => Statement::Jump(Rc::new(jmp.obfuscate())),
             Statement::Selection(sel) => Statement::Selection(Rc::new(sel.obfuscate())),
             Statement::Iteration(iter) => Statement::Iteration(Rc::new(iter.obfuscate())),
             Statement::Declaration(decls) => {
