@@ -271,7 +271,7 @@ impl Display for Expression {
         match self {
             Expression::Identifier(id) => write!(f, "{id}"),
             Expression::Constant(c) => write!(f, "{c}"),
-            Expression::Literal(lit) => write!(f, "{lit:?}"),
+            Expression::Literal(lit) => write!(f, "\"{lit}\""),
             Expression::Cast(ty, expr) => write!(f, "({ty})({expr})"),
             Expression::Binary(lhs, op, rhs) => write!(f, "({lhs} {op} {rhs})"),
             Expression::Conditional(cond, lhs, rhs) => write!(f, "({cond} ? {lhs} : {rhs})"),
@@ -438,6 +438,39 @@ impl Obfuscate for Ident {
     }
 }
 
+fn escape(data: &str) -> String {
+    let mut res = String::new();
+    let mut escape = false;
+
+    for ch in data.chars() {
+        match ch {
+            '\\' => escape = true,
+            '\"' if escape => res.push('\"'),
+            '\'' if escape => res.push('\''),
+            'n' if escape => res.push('\n'),
+            't' if escape => res.push('\t'),
+            _ => res.push(ch),
+        }
+
+        if ch != '\\' {
+            escape = false;
+        }
+    }
+
+    res
+}
+
+fn obfuscate_string(data: &str) -> String {
+    let mut buf = String::new();
+
+    for ch in data.chars() {
+        let code: u32 = ch.into();
+        buf.push_str(&format!("\\x{:x}", code));
+    }
+
+    buf
+}
+
 impl Obfuscate for PostOp {
     fn obfuscate(&self) -> Self {
         match self {
@@ -467,7 +500,7 @@ impl Obfuscate for Expression {
                     Expression::Constant(Constant::Integer(*v))
                 }
             }
-            Expression::Literal(lit) => Expression::Literal(lit.clone()),
+            Expression::Literal(lit) => Expression::Literal(obfuscate_string(&escape(lit))),
             Expression::Cast(ty, expr) => Expression::Cast(ty.clone(), Rc::new(expr.obfuscate())),
             Expression::Binary(lhs, op, rhs) => Expression::Binary(
                 Rc::new(lhs.obfuscate()),

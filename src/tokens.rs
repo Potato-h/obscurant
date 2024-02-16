@@ -2,24 +2,7 @@ use logos::{Lexer, Logos};
 use std::fmt; // to implement the Display trait
 
 fn literal(lex: &mut Lexer<Token>) -> String {
-    let mut res = String::new();
-    let mut escape = false;
-
-    for ch in lex.slice().chars().skip(1) {
-        match ch {
-            '\\' => escape = true,
-            '\"' if escape => res.push('\"'),
-            '\'' if escape => res.push('\''),
-            'n' if escape => res.push('\n'),
-            't' if escape => res.push('\t'),
-            _ => res.push(ch),
-        }
-
-        if ch != '\\' {
-            escape = false;
-        }
-    }
-
+    let mut res: String = lex.slice().chars().skip(1).collect();
     res.pop(); // pop closing "
     res
 }

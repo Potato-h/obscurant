@@ -6,7 +6,7 @@ lalrpop_mod!(pub grammar);
 
 fn main() -> io::Result<()> {
     for arg in std::env::args().skip(1) {
-        println!("Parsing {arg}");
+        println!("// Obscured {arg}");
         let source_code = std::fs::read_to_string(arg)?;
         let lexer = Lexer::new(&source_code[..]);
         let parser = grammar::UnitParser::new();
